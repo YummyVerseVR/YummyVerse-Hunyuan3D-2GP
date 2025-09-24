@@ -39,10 +39,8 @@ dependencies = [
     "opencv-python>=4.12.0.88",
     "pymeshlab>=2023.12.post3",
     "sentencepiece>=0.2.1",
-    "pert>=2019.11",
     "peft>=0.17.1",
     "xformers>=0.0.29.post3",
-    "setuptools>=80.9.0",
 ]
 
 # Let uv resolve local path sources for in-repo native extensions
