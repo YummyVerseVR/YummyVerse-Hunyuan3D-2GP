@@ -21,8 +21,6 @@ from diffusers.pipelines.auto_pipeline import AutoPipelineForText2Image
 
 class CustomText2ImagePipeline:
     def __init__(self, config: dict):
-        torch.set_default_device("cpu")
-
         self.__config = config.get("text2image", {})
         model_path = self.__config.get(
             "model", "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
@@ -34,9 +32,10 @@ class CustomText2ImagePipeline:
             enable_pag=True,
             pag_applied_layers=["blocks.(16|17|18|19)"],
         )
+        # self.__pipe.to(self.__device)
         self.__pipe.enable_attention_slicing()
-        self.__pipe.enable_vae_slicing()
-        self.__pipe.enable_sequential_cpu_offload()
+        # self.__pipe.enable_sequential_cpu_offload()
+        self.__pipe.enable_model_cpu_offload()
         self.__prompt_template = self.__config.get("prompt_template", "{{food}}")
         self.__negative_prompt = self.__config.get("negative_prompt", "")
         self.__inference_steps = int(self.__config.get("inference_steps", 25))
