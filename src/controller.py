@@ -2,6 +2,7 @@ import os
 import random
 import time
 import uuid
+import numpy
 import torch
 
 from PIL import Image
@@ -9,13 +10,58 @@ from mmgp import offload, profile_type
 from trimesh import Trimesh
 
 from hy3dgen.texgen import Hunyuan3DPaintPipeline
-from hy3dgen.text2image import HunyuanDiTPipeline
 from hy3dgen.shapegen import (
     FaceReducer,
     Hunyuan3DDiTFlowMatchingPipeline,
 )
 from hy3dgen.shapegen.pipelines import export_to_trimesh
 from hy3dgen.rembg import BackgroundRemover
+from diffusers.pipelines.auto_pipeline import AutoPipelineForText2Image
+
+
+class CustomText2ImagePipeline:
+    def __init__(self, config: dict):
+        self.__config = config.get("text2image", {})
+        model_path = self.__config.get(
+            "model", "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
+        )
+        self.__pipe = AutoPipelineForText2Image.from_pretrained(
+            model_path,
+            torch_dtype=torch.float16,
+            enable_pag=True,
+            pag_applied_layers=["blocks.(16|17|18|19)"],
+        )
+        self.__pipe.to("cuda")
+        self.__prompt_template = self.__config.get("prompt_template", "{{food}}")
+        self.__negative_prompt = self.__config.get("negative_prompt", "")
+        self.__inference_steps = int(self.__config.get("inference_steps", 25))
+        self.__pag_scale = float(self.__config.get("pag_scale", 1.3))
+        self.__width = int(self.__config.get("width", 1024))
+        self.__height = int(self.__config.get("height", 1024))
+
+        seed = int(self.__config.get("seed", 0))
+        random.seed(seed)
+        numpy.random.seed(seed)
+        torch.manual_seed(seed)
+        os.environ["PL_GLOBAL_SEED"] = str(seed)
+
+    @torch.no_grad()
+    def __call__(self, request: str, seed: int = 0) -> Image.Image:
+        generator = torch.Generator(device="cuda")
+        generator = generator.manual_seed(int(seed))
+
+        prompt = self.__prompt_template.replace("{{food}}", request)
+        out_img = self.__pipe(
+            prompt=prompt,
+            negative_prompt=self.__negative_prompt,
+            num_inference_steps=self.__inference_steps,
+            pag_scale=self.__pag_scale,
+            width=self.__width,
+            height=self.__height,
+            generator=generator,
+            return_dict=False,
+        )[0][0]
+        return out_img
 
 
 class Hunyuan3DController:
@@ -33,7 +79,6 @@ class Hunyuan3DController:
         self.__save_dir = self.__config.get("cache_path", "gradio_cache")
         self.__profile = self.__config.get("profile", "3")
         self.__verbose = self.__config.get("verbose", "1")
-        self.__enable_t23d = self.__config.get("enable_t23d", False)
         self.__enable_flashvdm = self.__config.get("enable_flashvdm", False)
         self.__disable_tex = self.__config.get("disable_tex", False)
         self.__low_vram_mode = self.__config.get("low_vram_mode", False)
@@ -60,9 +105,8 @@ class Hunyuan3DController:
 
         os.makedirs(self.__save_dir, exist_ok=True)
 
-        self.__mv_mode = "mv" in self.__model_path
-        self.__texturegen_worker = self.__load_texture_generator()
-        self.__t2i_worker = self.__load_text2image()
+        self.__texturegen = self.__load_texture_generator()
+        self.__text2image = CustomText2ImagePipeline(self.__config)
         self.__rmbg_worker = BackgroundRemover()
         self.__i23d_worker = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             self.__model_path,
@@ -83,20 +127,11 @@ class Hunyuan3DController:
                     self.__texgen_model_path
                 )
             except Exception as e:
-                print(e)
-                print("[ERROR] Failed to load texture generator.")
+                print(f"[ERROR] Failed to load texture generator: {e}.")
                 print(
                     "[ERROR] Please try to install requirements by following README.md"
                 )
         return generator
-
-    def __load_text2image(self) -> HunyuanDiTPipeline | None:
-        t2i_worker = None
-        if self.__enable_t23d:
-            t2i_worker = HunyuanDiTPipeline(
-                "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
-            )
-        return t2i_worker
 
     def __create_kwargs(self) -> dict:
         kwargs = {}
@@ -129,15 +164,11 @@ class Hunyuan3DController:
         self.__i23d_worker.__class__ = custom_class
 
         pipe = offload.extract_models("i23d_worker", self.__i23d_worker)
-        if self.__texturegen_worker is not None:
-            pipe.update(
-                offload.extract_models("texturegen_worker", self.__texturegen_worker)
-            )
-            self.__texturegen_worker.models[
-                "multiview_model"
-            ].pipeline.vae.use_slicing = True
-        if self.__t2i_worker is not None:
-            pipe.update(offload.extract_models("t2i_worker", self.__t2i_worker))
+        if self.__texturegen is not None:
+            pipe.update(offload.extract_models("texturegen_worker", self.__texturegen))
+            self.__texturegen.models["multiview_model"].pipeline.vae.use_slicing = True
+        if self.__text2image is not None:
+            pipe.update(offload.extract_models("t2i_worker", self.__text2image))
 
         offload.default_verboseLevel = self.__verbose
         kwargs = self.__create_kwargs()
@@ -183,81 +214,20 @@ class Hunyuan3DController:
 
     async def generate(
         self,
-        caption: str | None = None,
-        image: dict[str, Image.Image | None] | Image.Image | None = None,
-        mv_image_front: Image.Image | None = None,
-        mv_image_back: Image.Image | None = None,
-        mv_image_left: Image.Image | None = None,
-        mv_image_right: Image.Image | None = None,
+        caption: str,
         steps: int = 50,
-        guidance_scale: float = 7.5,
-        octree_resolution: int = 256,
-        check_box_rembg: bool = False,
-        num_chunks: int = 200000,
     ) -> tuple[str, dict[str, Image.Image | None] | Image.Image | None]:
-        if not self.__mv_mode and image is None and caption is None:
-            print("[ERROR] Please provide either a caption or an image.")
-            return "", None
-        if self.__mv_mode:
-            if (
-                mv_image_front is None
-                and mv_image_back is None
-                and mv_image_left is None
-                and mv_image_right is None
-            ):
-                print("[ERROR] Please provide at least one view image.")
-                return "", None
-            image = {}
-            if mv_image_front:
-                image["front"] = mv_image_front
-            if mv_image_back:
-                image["back"] = mv_image_back
-            if mv_image_left:
-                image["left"] = mv_image_left
-            if mv_image_right:
-                image["right"] = mv_image_right
-
         seed = int(self.__get_seed())
-
-        octree_resolution = int(octree_resolution)
-        if caption:
-            print("[INFO] prompt is", caption)
+        octree_resolution = int(self.__config.get("octree_resolution", 256))
         save_folder = self.__gen_save_folder()
 
-        if image is None:
-            try:
-                if self.__t2i_worker is None:
-                    print(
-                        "[ERROR] Text to 3D is disabled. Please enable it by `python gradio_app.py --enable_t23d`."
-                    )
-                    return "", None
-                image = self.__t2i_worker(caption)
-            except Exception:
-                print(
-                    "[ERROR] Text to 3D is disabled. Please enable it by `python gradio_app.py --enable_t23d`."
-                )
-                return "", None
+        image = self.__text2image(caption)
+        if not isinstance(image, Image.Image):
+            return "", None
 
-        converted_image = None
-        if self.__mv_mode and isinstance(image, dict):
-            start_time = time.time()
-            for k, v in image.items():
-                if v is None:
-                    continue
-
-                if check_box_rembg or v.mode == "RGB":
-                    img = self.__rmbg_worker(v.convert("RGB"))
-                    image[k] = img
-            converted_image = image
-        else:
-            if not isinstance(image, Image.Image):
-                return "", None
-
-            if check_box_rembg or image.mode == "RGB":
-                start_time = time.time()
-                converted_image = self.__rmbg_worker(image.convert("RGB"))
-            else:
-                converted_image = image
+        check_box_rembg = self.__config.get("rembg", False)
+        if check_box_rembg or image.mode == "RGB":
+            image = self.__rmbg_worker(image.convert("RGB"))
 
         # image to white model
         start_time = time.time()
@@ -265,12 +235,12 @@ class Hunyuan3DController:
         generator = torch.Generator()
         generator = generator.manual_seed(int(seed))
         outputs = self.__i23d_worker(
-            image=converted_image,
+            image=image,
             num_inference_steps=steps,
-            guidance_scale=guidance_scale,
+            guidance_scale=int(self.__config.get("guidance_scale", 7.5)),
             generator=generator,
             octree_resolution=octree_resolution,
-            num_chunks=num_chunks,
+            num_chunks=int(self.__config.get("num_chunks", 200000)),
             output_type="mesh",
         )
         print(f"[INFO] Shape generation takes {time.time() - start_time:.6f} seconds.")
@@ -278,18 +248,7 @@ class Hunyuan3DController:
         mesh = export_to_trimesh(outputs)[0]
         mesh = self.__face_reducer(mesh)
 
-        main_image = (
-            converted_image
-            if not self.__mv_mode
-            else converted_image["front"]
-            if isinstance(converted_image, dict) and ("front" in converted_image)
-            else None
-        )
-        mesh = (
-            self.__texturegen_worker(mesh, main_image)
-            if self.__texturegen_worker
-            else mesh
-        )
+        mesh = self.__texturegen(mesh, image) if self.__texturegen else mesh
         path = self.__export(mesh, save_folder, textured=True)
 
-        return path, main_image
+        return path, image

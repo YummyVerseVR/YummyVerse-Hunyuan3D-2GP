@@ -10,18 +10,23 @@ parser.add_argument(
     "-p",
     "--port",
     type=int,
-    default=8003,
-    help="Port to run the FastAPI application on(default: 8003)",
+    default=8002,
+    help="Port to run the FastAPI application on(default: 8002)",
+)
+parser.add_argument(
+    "--config",
+    type=str,
+    default=CONFIG_PATH,
+    help="Path to the configuration file (default: settings/meta.json)",
 )
 parser.add_argument(
     "--debug",
-    type=bool,
-    default=False,
-    help="Enable debug mode",
+    action="store_true",
+    help="Run the application in debug mode (default: False)",
 )
 args = parser.parse_args()
 
-with open(CONFIG_PATH, "r") as f:
+with open(args.config, "r") as f:
     config = json.load(f)
 
 app = App(config, args.debug).get_app()
