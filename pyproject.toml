@@ -42,6 +42,7 @@ dependencies = [
     "peft>=0.17.1",
     "xformers>=0.0.29.post3",
     "setuptools>=80.9.0",
+    "torchao>=0.13.0",
 ]
 
 # Let uv resolve local path sources for in-repo native extensions

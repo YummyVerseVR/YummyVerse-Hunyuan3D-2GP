@@ -17,6 +17,8 @@ from hy3dgen.shapegen import (
 from hy3dgen.shapegen.pipelines import export_to_trimesh
 from hy3dgen.rembg import BackgroundRemover
 from diffusers.pipelines.auto_pipeline import AutoPipelineForText2Image
+from diffusers.quantizers.pipe_quant_config import PipelineQuantizationConfig
+from diffusers.quantizers.quantization_config import TorchAoConfig
 
 
 class CustomText2ImagePipeline:
@@ -26,14 +28,23 @@ class CustomText2ImagePipeline:
             "model", "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
         )
         self.__device = self.__config.get("device", "cuda")
+        qconf = PipelineQuantizationConfig(
+            quant_mapping={
+                "transformer": TorchAoConfig("int8wo"),
+                "text_encoder": TorchAoConfig("int8wo"),
+                "vae": TorchAoConfig("int8wo"),
+            },
+        )
         self.__pipe = AutoPipelineForText2Image.from_pretrained(
             model_path,
+            quantization_config=qconf,
             torch_dtype=torch.float16,
             enable_pag=True,
             pag_applied_layers=["blocks.(16|17|18|19)"],
         )
-        # self.__pipe.to(self.__device)
+        self.__pipe = self.__pipe.to(self.__device)
         self.__pipe.enable_attention_slicing()
+        # self.__pipe.enable_xformers_memory_efficient_atension()
         # self.__pipe.enable_sequential_cpu_offload()
         self.__pipe.enable_model_cpu_offload()
         self.__prompt_template = self.__config.get("prompt_template", "{{food}}")
@@ -110,7 +121,7 @@ class Hunyuan3DController:
         os.makedirs(self.__save_dir, exist_ok=True)
 
         self.__texturegen = self.__load_texture_generator()
-        self.__text2image = CustomText2ImagePipeline(self.__config)
+        self.__text2image = CustomText2ImagePipeline(config)
         self.__rmbg_worker = BackgroundRemover()
         self.__i23d_worker = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             self.__model_path,

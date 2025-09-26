@@ -30,6 +30,7 @@
           nvidia-docker
           libGL
           glib
+          glibc.bin
         ]);
         PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
         shellHook = ''

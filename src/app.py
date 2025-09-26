@@ -51,7 +51,7 @@ class App:
         else:
             requests.post(*args, **kwargs)
 
-    async def __save_model(self, user_id: str, path: str) -> None:
+    def __save_model(self, user_id: str, path: str) -> None:
         if not path:
             raise HTTPException(status_code=500, detail="Model path is empty.")
 
@@ -67,7 +67,7 @@ class App:
             print(f"[ERROR] Exception while saving model: {e}")
             raise HTTPException(status_code=500, detail="Error saving model.")
 
-    async def __save_image(self, user_id: str, image: Image.Image) -> None:
+    def __save_image(self, user_id: str, image: Image.Image) -> None:
         buffered = BytesIO()
         image.save(buffered, format="PNG")
         buffered.seek(0)
