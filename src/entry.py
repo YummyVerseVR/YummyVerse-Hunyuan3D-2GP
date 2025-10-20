@@ -15,8 +15,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--debug",
-    type=bool,
-    default=False,
+    action="store_true",
     help="Enable debug mode",
 )
 args = parser.parse_args()
