@@ -142,7 +142,8 @@ class Hunyuan3DController:
                     self.__texgen_model_path
                 )
             except Exception as e:
-                print(f"[ERROR] Failed to load texture generator: {e}.")
+                print(e)
+                print("[ERROR] Failed to load texture generator.")
                 print(
                     "[ERROR] Please try to install requirements by following README.md"
                 )
