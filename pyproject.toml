@@ -19,8 +19,8 @@ dependencies = [
     "pydantic>=2.7,<2.10",
     "pybind11",
     "tqdm",
-    "torch==2.6.0",
-    "torchvision==0.21.0",
+    "torch==2.6.0+cu124",
+    "torchvision==0.21.0+cu124",
     "transformers==4.49.0",
     "uvicorn>=0.30",
     # 3D / Mesh
