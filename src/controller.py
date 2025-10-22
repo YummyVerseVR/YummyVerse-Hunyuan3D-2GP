@@ -8,6 +8,7 @@ import torch
 from PIL import Image
 from mmgp import offload, profile_type
 from trimesh import Trimesh
+from pylognet.client import LoggingClient, LogLevel
 
 from hy3dgen.texgen import Hunyuan3DPaintPipeline
 from hy3dgen.shapegen import (
@@ -17,35 +18,30 @@ from hy3dgen.shapegen import (
 from hy3dgen.shapegen.pipelines import export_to_trimesh
 from hy3dgen.rembg import BackgroundRemover
 from diffusers.pipelines.auto_pipeline import AutoPipelineForText2Image
-from diffusers.quantizers.pipe_quant_config import PipelineQuantizationConfig
-from diffusers.quantizers.quantization_config import TorchAoConfig
 
 
 class CustomText2ImagePipeline:
-    def __init__(self, config: dict):
+    def __init__(
+        self,
+        config: dict,
+        logger: LoggingClient,
+        debug_mode: bool = False,
+    ):
+        self.__logger = logger
+        self.__debug = debug_mode
         self.__config = config.get("text2image", {})
         model_path = self.__config.get(
             "model", "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
         )
         self.__device = self.__config.get("device", "cuda")
-        qconf = PipelineQuantizationConfig(
-            quant_mapping={
-                "transformer": TorchAoConfig("int8wo"),
-                "text_encoder": TorchAoConfig("int8wo"),
-                "vae": TorchAoConfig("int8wo"),
-            },
-        )
         self.__pipe = AutoPipelineForText2Image.from_pretrained(
             model_path,
-            quantization_config=qconf,
             torch_dtype=torch.float16,
             enable_pag=True,
             pag_applied_layers=["blocks.(16|17|18|19)"],
         )
-        self.__pipe = self.__pipe.to(self.__device)
         self.__pipe.enable_attention_slicing()
-        # self.__pipe.enable_xformers_memory_efficient_atension()
-        # self.__pipe.enable_sequential_cpu_offload()
+        self.__pipe.enable_sequential_cpu_offload()
         self.__pipe.enable_model_cpu_offload()
         self.__prompt_template = self.__config.get("prompt_template", "{{food}}")
         self.__negative_prompt = self.__config.get("negative_prompt", "")
@@ -65,6 +61,11 @@ class CustomText2ImagePipeline:
         generator = torch.Generator(device=self.__device)
         generator = generator.manual_seed(int(seed))
 
+        self.__logger.log(
+            f"Generating image for prompt: {request} with seed: {seed}",
+            LogLevel.INFO,
+        )
+
         prompt = self.__prompt_template.replace("{{food}}", request)
         out_img = self.__pipe(
             prompt=prompt,
@@ -80,7 +81,14 @@ class CustomText2ImagePipeline:
 
 
 class Hunyuan3DController:
-    def __init__(self, config: dict):
+    def __init__(
+        self,
+        config: dict,
+        logger: LoggingClient,
+        debug_mode: bool = False,
+    ):
+        self.__logger = logger
+        self.__debug = debug_mode
         self.__config = config.get("hunyuan3d", {})
 
         self.__seed = int(self.__config.get("seed", 0))
@@ -121,7 +129,9 @@ class Hunyuan3DController:
         os.makedirs(self.__save_dir, exist_ok=True)
 
         self.__texturegen = self.__load_texture_generator()
-        self.__text2image = CustomText2ImagePipeline(config)
+        self.__text2image = CustomText2ImagePipeline(
+            config, self.__logger, self.__debug
+        )
         self.__rmbg_worker = BackgroundRemover()
         self.__i23d_worker = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             self.__model_path,
@@ -142,10 +152,9 @@ class Hunyuan3DController:
                     self.__texgen_model_path
                 )
             except Exception as e:
-                print(e)
-                print("[ERROR] Failed to load texture generator.")
-                print(
-                    "[ERROR] Please try to install requirements by following README.md"
+                self.__logger.log(
+                    f"Failed to load texture generator: {e}",
+                    LogLevel.ERROR,
                 )
         return generator
 
@@ -228,7 +237,7 @@ class Hunyuan3DController:
             seed = random.randint(0, self.__max_seed)
         return seed
 
-    async def generate(
+    def generate(
         self,
         caption: str,
         steps: int = 50,
@@ -253,13 +262,16 @@ class Hunyuan3DController:
         outputs = self.__i23d_worker(
             image=image,
             num_inference_steps=steps,
-            guidance_scale=int(self.__config.get("guidance_scale", 7.5)),
+            guidance_scale=float(self.__config.get("guidance_scale", 7.5)),
             generator=generator,
             octree_resolution=octree_resolution,
             num_chunks=int(self.__config.get("num_chunks", 200000)),
             output_type="mesh",
         )
-        print(f"[INFO] Shape generation takes {time.time() - start_time:.6f} seconds.")
+        self.__logger.log(
+            f"Shape generation takes {time.time() - start_time:.6f} seconds.",
+            LogLevel.INFO,
+        )
 
         mesh = export_to_trimesh(outputs)[0]
         mesh = self.__face_reducer(mesh)

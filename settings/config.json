@@ -38,6 +38,7 @@
         "num_chunks": 200000
     },
     "endpoints": {
-        "control": "http://192.168.11.129:8000"
+        "control": "http://192.168.11.129:8000",
+        "logging": "http://192.168.11.129:9000"
     }
 }
