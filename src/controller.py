@@ -7,9 +7,9 @@ import torch
 from PIL import Image
 from mmgp import offload, profile_type
 from trimesh import Trimesh
+from pylognet.client import LoggingClient, LogLevel
 
 from hy3dgen.texgen import Hunyuan3DPaintPipeline
-from hy3dgen.text2image import HunyuanDiTPipeline
 from hy3dgen.shapegen import (
     FaceReducer,
     Hunyuan3DDiTFlowMatchingPipeline,
@@ -19,8 +19,9 @@ from hy3dgen.rembg import BackgroundRemover
 
 
 class Hunyuan3DController:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, logger: LoggingClient):
         self.__config = config.get("hunyuan3d", {})
+        self.__logger = logger
 
         self.__seed = int(self.__config.get("seed", 0))
         self.__random_seed = self.__config.get("random_seed", False)
@@ -33,7 +34,6 @@ class Hunyuan3DController:
         self.__save_dir = self.__config.get("cache_path", "gradio_cache")
         self.__profile = self.__config.get("profile", "3")
         self.__verbose = self.__config.get("verbose", "1")
-        self.__enable_t23d = self.__config.get("enable_t23d", False)
         self.__enable_flashvdm = self.__config.get("enable_flashvdm", False)
         self.__disable_tex = self.__config.get("disable_tex", False)
         self.__low_vram_mode = self.__config.get("low_vram_mode", False)
@@ -62,7 +62,6 @@ class Hunyuan3DController:
 
         self.__mv_mode = "mv" in self.__model_path
         self.__texturegen_worker = self.__load_texture_generator()
-        self.__t2i_worker = self.__load_text2image()
         self.__rmbg_worker = BackgroundRemover()
         self.__i23d_worker = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             self.__model_path,
@@ -82,21 +81,16 @@ class Hunyuan3DController:
                 generator = Hunyuan3DPaintPipeline.from_pretrained(
                     self.__texgen_model_path
                 )
+                self.__logger.log(
+                    "Loaded texture generator",
+                    LogLevel.INFO,
+                )
             except Exception as e:
-                raise e
-                print("[ERROR] Failed to load texture generator.")
-                print(
-                    "[ERROR] Please try to install requirements by following README.md"
+                self.__logger.log(
+                    f"Failed to load texture generator: {e}",
+                    LogLevel.ERROR,
                 )
         return generator
-
-    def __load_text2image(self) -> HunyuanDiTPipeline | None:
-        t2i_worker = None
-        if self.__enable_t23d:
-            t2i_worker = HunyuanDiTPipeline(
-                "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
-            )
-        return t2i_worker
 
     def __create_kwargs(self) -> dict:
         kwargs = {}
@@ -136,8 +130,6 @@ class Hunyuan3DController:
             self.__texturegen_worker.models[
                 "multiview_model"
             ].pipeline.vae.use_slicing = True
-        if self.__t2i_worker is not None:
-            pipe.update(offload.extract_models("t2i_worker", self.__t2i_worker))
 
         offload.default_verboseLevel = self.__verbose
         kwargs = self.__create_kwargs()
@@ -181,7 +173,7 @@ class Hunyuan3DController:
             seed = random.randint(0, self.__max_seed)
         return seed
 
-    async def generate(
+    def generate(
         self,
         caption: str | None = None,
         image: dict[str, Image.Image | None] | Image.Image | None = None,
@@ -196,7 +188,10 @@ class Hunyuan3DController:
         num_chunks: int = 200000,
     ) -> tuple[str, dict[str, Image.Image | None] | Image.Image | None]:
         if not self.__mv_mode and image is None and caption is None:
-            print("[ERROR] Please provide either a caption or an image.")
+            self.__logger.log(
+                "Please provide either a caption or an image.",
+                LogLevel.CRITICAL,
+            )
             return "", None
         if self.__mv_mode:
             if (
@@ -205,7 +200,10 @@ class Hunyuan3DController:
                 and mv_image_left is None
                 and mv_image_right is None
             ):
-                print("[ERROR] Please provide at least one view image.")
+                self.__logger.log(
+                    "Please provide at least one image.",
+                    LogLevel.CRITICAL,
+                )
                 return "", None
             image = {}
             if mv_image_front:
@@ -220,23 +218,7 @@ class Hunyuan3DController:
         seed = int(self.__get_seed())
 
         octree_resolution = int(octree_resolution)
-        if caption:
-            print("[INFO] prompt is", caption)
         save_folder = self.__gen_save_folder()
-
-        if image is None:
-            try:
-                if self.__t2i_worker is None:
-                    print(
-                        "[ERROR] Text to 3D is disabled. Please enable it by `python gradio_app.py --enable_t23d`."
-                    )
-                    return "", None
-                image = self.__t2i_worker(caption)
-            except Exception:
-                print(
-                    "[ERROR] Text to 3D is disabled. Please enable it by `python gradio_app.py --enable_t23d`."
-                )
-                return "", None
 
         converted_image = None
         if self.__mv_mode and isinstance(image, dict):
@@ -259,7 +241,10 @@ class Hunyuan3DController:
             else:
                 converted_image = image
 
-        # image to white model
+        self.__logger.log(
+            "Shape generation started",
+            LogLevel.INFO,
+        )
         start_time = time.time()
 
         generator = torch.Generator()
@@ -273,10 +258,17 @@ class Hunyuan3DController:
             num_chunks=num_chunks,
             output_type="mesh",
         )
-        print(f"[INFO] Shape generation takes {time.time() - start_time:.6f} seconds.")
+        self.__logger.log(
+            f"Shape generation time: {time.time() - start_time:.6f}",
+            LogLevel.INFO,
+        )
 
         mesh = export_to_trimesh(outputs)[0]
         mesh = self.__face_reducer(mesh)
+        self.__logger.log(
+            "Model convert and face reducing completed",
+            LogLevel.INFO,
+        )
 
         main_image = (
             converted_image
@@ -291,5 +283,9 @@ class Hunyuan3DController:
             else mesh
         )
         path = self.__export(mesh, save_folder, textured=True)
+        self.__logger.log(
+            "Model exported",
+            LogLevel.INFO,
+        )
 
         return path, main_image

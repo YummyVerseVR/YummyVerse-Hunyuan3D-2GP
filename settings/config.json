@@ -1,12 +1,11 @@
 {
-    "use_t23d": false,
     "hunyuan3d": {
         "max_seed": 1e7,
         "supported_formats": ["glb", "obj", "ply", "stl"],
         "model": "tencent/Hunyuan3D-2mini",
         "subfolder": "hunyuan3d-dit-v2-mini",
         "texgen": "tencent/Hunyuan3D-2",
-        "device": "cuda",
+        "device": "cuda:0",
         "mc_algo": "dmc",
         "cache_path": "gradio_cache",
         "profile": 3,
@@ -24,6 +23,7 @@
         "seed": 0
     },
     "endpoints": {
-        "control": "http://192.168.11.129:8000"
+        "control": "http://192.168.11.129:8000",
+        "logger": "http://192.168.11.129:9000"
     }
 }

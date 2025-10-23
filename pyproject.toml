@@ -9,7 +9,7 @@ dependencies = [
     "accelerate",
     "diffusers",
     "einops",
-    "fastapi>=0.110,<0.116",
+    "fastapi>=0.110",
     "gradio>=4.44,<5",
     "starlette>=0.37,<0.47",
     "gradio_litmodel3d",
@@ -42,12 +42,14 @@ dependencies = [
     "peft>=0.17.1",
     "xformers>=0.0.29.post3",
     "setuptools>=80.9.0",
+    "pylognet",
 ]
 
 # Let uv resolve local path sources for in-repo native extensions
 [tool.uv.sources]
 custom_rasterizer = { path = "src/hy3dgen/texgen/custom_rasterizer" }
 mesh_processor    = { path = "src/hy3dgen/texgen/differentiable_renderer" }
+pylognet = { git = "https://github.com/upiscium/pylognet.git" }
 
 [project.optional-dependencies]
 postproc = [

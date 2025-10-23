@@ -169,5 +169,6 @@ gradio_cache/
 
 .direnv
 debug_dump.png
+nohup.out
 
 !src/hy3dgen/texgen/custom_rasterizer/lib
