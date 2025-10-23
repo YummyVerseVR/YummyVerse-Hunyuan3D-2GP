@@ -32,7 +32,7 @@ class Light_Shadow_Remover:
             config.light_remover_ckpt_path,
             torch_dtype=torch.float16,
             safety_checker=None,
-        ).to(self.device)
+        )
         # pipeline = pipeline.to("cpu")
 
         # pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(

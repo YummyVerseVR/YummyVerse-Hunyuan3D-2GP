@@ -51,7 +51,7 @@ class App:
             "/ping", self.ping, methods=["GET"], response_class=JSONResponse
         )
 
-    async def __save_model(self, user_id: str, path: str) -> None:
+    def __save_model(self, user_id: str, path: str) -> None:
         if not path:
             raise HTTPException(status_code=500, detail="Model path is empty.")
 
@@ -82,7 +82,7 @@ class App:
         image = Image.open(BytesIO(byte)).convert("RGB")
         path, _ = self.__hunyuan3D_controller.generate(image=image)
 
-        asyncio.create_task(self.__save_model(user_id=user_id, path=path))
+        self.__save_model(user_id=user_id, path=path)
 
     def get_app(self):
         self.__app.include_router(self.__router)
