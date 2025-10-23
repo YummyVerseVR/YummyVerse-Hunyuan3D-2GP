@@ -137,7 +137,7 @@ class App:
         )
         self.__executor.submit(self.__generate, request)
         return JSONResponse(
-            {"message": "Model and image generation completed."},
+            {"message": "Model and image generation is submitted."},
             status_code=200,
         )
 

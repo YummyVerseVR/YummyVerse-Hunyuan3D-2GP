@@ -38,10 +38,10 @@ class Light_Shadow_Remover:
         # pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(
         #     pipeline.scheduler.config
         # )
-        # pipeline.set_progress_bar_config(disable=True)
+        pipeline.set_progress_bar_config(disable=False)
 
-        # self.pipeline = pipeline.to(self.device, torch.float16)
-        self.pipeline = pipeline  # Needed to avoid displaying the warning
+        self.pipeline = pipeline.to(self.device, torch.float16)
+        # self.pipeline = pipeline  # Needed to avoid displaying the warning
 
     def recorrect_rgb(self, src_image, target_image, alpha_channel, scale=0.95):
         def flat_and_mask(bgr, a):

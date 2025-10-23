@@ -17,7 +17,7 @@ from hy3dgen.shapegen import (
 )
 from hy3dgen.shapegen.pipelines import export_to_trimesh
 from hy3dgen.rembg import BackgroundRemover
-from diffusers.pipelines.auto_pipeline import AutoPipelineForText2Image
+from diffusers import AutoPipelineForText2Image
 
 
 class CustomText2ImagePipeline:
@@ -34,23 +34,24 @@ class CustomText2ImagePipeline:
             "model", "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled"
         )
         self.__device = self.__config.get("device", "cuda")
-        self.__pipe = AutoPipelineForText2Image.from_pretrained(
+        torch.set_default_device("cpu")
+        self.pipe = AutoPipelineForText2Image.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
             enable_pag=True,
             pag_applied_layers=["blocks.(16|17|18|19)"],
-        )
-        self.__pipe.enable_attention_slicing()
-        self.__pipe.enable_sequential_cpu_offload()
-        self.__pipe.enable_model_cpu_offload()
+        )  # .to(device) #  needed to avoid displaying the warning
+        # self.__pipe = self.__pipe.to(self.__device)
+        # self.__pipe.enable_attention_slicing()
+        # self.__pipe.enable_sequential_cpu_offload()
+        # self.__pipe.enable_model_cpu_offload()
         self.__prompt_template = self.__config.get("prompt_template", "{{food}}")
         self.__negative_prompt = self.__config.get("negative_prompt", "")
         self.__inference_steps = int(self.__config.get("inference_steps", 25))
-        self.__pag_scale = float(self.__config.get("pag_scale", 1.3))
         self.__width = int(self.__config.get("width", 1024))
         self.__height = int(self.__config.get("height", 1024))
 
-        seed = int(self.__config.get("seed", 0))
+    def __seed(self, seed: int) -> None:
         random.seed(seed)
         numpy.random.seed(seed)
         torch.manual_seed(seed)
@@ -58,20 +59,20 @@ class CustomText2ImagePipeline:
 
     @torch.no_grad()
     def __call__(self, request: str, seed: int = 0) -> Image.Image:
-        generator = torch.Generator(device=self.__device)
-        generator = generator.manual_seed(int(seed))
-
         self.__logger.log(
             f"Generating image for prompt: {request} with seed: {seed}",
             LogLevel.INFO,
         )
 
         prompt = self.__prompt_template.replace("{{food}}", request)
-        out_img = self.__pipe(
+        self.__seed(seed)
+        generator = torch.Generator(device="cuda")  # self.pipe.device
+        generator = generator.manual_seed(int(seed))
+        out_img = self.pipe(
             prompt=prompt,
             negative_prompt=self.__negative_prompt,
             num_inference_steps=self.__inference_steps,
-            pag_scale=self.__pag_scale,
+            pag_scale=1.3,
             width=self.__width,
             height=self.__height,
             generator=generator,
@@ -247,6 +248,10 @@ class Hunyuan3DController:
         save_folder = self.__gen_save_folder()
 
         image = self.__text2image(caption)
+        self.__logger.log(
+            "Texture generation done.",
+            LogLevel.INFO,
+        )
         if not isinstance(image, Image.Image):
             return "", None
 

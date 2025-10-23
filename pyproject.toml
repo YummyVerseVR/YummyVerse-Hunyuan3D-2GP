@@ -40,7 +40,6 @@ dependencies = [
     "pymeshlab>=2023.12.post3",
     "sentencepiece>=0.2.1",
     "peft>=0.17.1",
-    "xformers>=0.0.29.post3",
     "setuptools>=80.9.0",
     "torchao>=0.13.0",
     "pylognet",

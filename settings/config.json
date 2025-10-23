@@ -1,11 +1,10 @@
 {
     "text2image": {
-        "model": "Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled",
-        "device": "cuda",
+        "model": "stabilityai/stable-diffusion-2-1",
+        "device": "cuda:1",
         "prompt_template": "A highly realistic product photo of {{food}}, centered in the frame, shot from a 30-degree front angle. The object vivid, detailed, photo-realistic. Pure white seamless background, no shadows, no reflections, no additional objects. Professional product photography style, studio-quality lighting, ultra-detailed textures, high-resolution, 8K realism.",
         "negative_prompt": "blurry, low resolution, distorted, cartoon, illustration, drawing, painting, text, watermark, logo, human hand, fingers, people, faces, body parts, table, plate, bowl, utensils, cutlery, furniture, packaging, extra objects, cluttered background, shadows, reflections, colors other than white in background, cropped, out of frame, duplicate, deformed",
         "inference_steps": 20,
-        "pag_scale": 7.5,
         "width": 1024,
         "height": 1024,
         "seed": 0
@@ -16,7 +15,7 @@
         "model": "tencent/Hunyuan3D-2mini",
         "subfolder": "hunyuan3d-dit-v2-mini",
         "texgen": "tencent/Hunyuan3D-2",
-        "device": "cuda",
+        "device": "cuda:0",
         "mc_algo": "dmc",
         "cache_path": ".cache",
         "profile": 3,
