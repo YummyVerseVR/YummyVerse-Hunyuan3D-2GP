@@ -28,11 +28,10 @@ class App:
         )
 
         self.__queue = asyncio.Queue()
+        self.__executor = ThreadPoolExecutor()
         self.__hunyuan3D_controller = Hunyuan3DController(config, self.__logger)
         self.__router = APIRouter()
         self.__app = FastAPI()
-
-        asyncio.create_task(self.__worker())
 
         self.__setup_routes()
         self.__logger.log(
@@ -41,6 +40,8 @@ class App:
         )
 
     def __setup_routes(self):
+        self.__router.add_event_handler("startup", self.__activate)
+
         self.__router.add_api_route(
             "/generate",
             self.generate,
@@ -54,15 +55,12 @@ class App:
     async def __worker(self):
         while True:
             user_id, byte = await self.__queue.get()
-            try:
-                self.__generate(user_id, byte)
-            except Exception as e:
-                self.__logger.log(
-                    f"Error processing generation for user ID {user_id}: {e}",
-                    LogLevel.ERROR,
-                )
-            finally:
-                self.__queue.task_done()
+            self.__executor.submit(self.__generate, user_id, byte)
+            self.__queue.task_done()
+            await asyncio.sleep(5)
+
+    def __activate(self) -> None:
+        asyncio.create_task(self.__worker())
 
     def __save_model(self, user_id: str, path: str) -> None:
         if not path:
