@@ -5,16 +5,10 @@ from PIL import Image
 from io import BytesIO
 from fastapi import FastAPI, APIRouter, HTTPException, Form, UploadFile, File
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from pylognet.client import LoggingClient, LogLevel
 from concurrent.futures import ThreadPoolExecutor
 
 from controller import Hunyuan3DController
-
-
-class UserRequest(BaseModel):
-    user_id: str
-    prompt: str
 
 
 class App:
@@ -33,12 +27,18 @@ class App:
             disable=not logging,
         )
 
+        self.__queue = asyncio.Queue()
         self.__hunyuan3D_controller = Hunyuan3DController(config, self.__logger)
-        self.__executor = ThreadPoolExecutor()
         self.__router = APIRouter()
         self.__app = FastAPI()
 
+        asyncio.create_task(self.__worker())
+
         self.__setup_routes()
+        self.__logger.log(
+            "Model Generation Server initialized successfully",
+            LogLevel.INFO,
+        )
 
     def __setup_routes(self):
         self.__router.add_api_route(
@@ -50,6 +50,19 @@ class App:
         self.__router.add_api_route(
             "/ping", self.ping, methods=["GET"], response_class=JSONResponse
         )
+
+    async def __worker(self):
+        while True:
+            user_id, byte = await self.__queue.get()
+            try:
+                self.__generate(user_id, byte)
+            except Exception as e:
+                self.__logger.log(
+                    f"Error processing generation for user ID {user_id}: {e}",
+                    LogLevel.ERROR,
+                )
+            finally:
+                self.__queue.task_done()
 
     def __save_model(self, user_id: str, path: str) -> None:
         if not path:
@@ -93,7 +106,7 @@ class App:
         self, user_id: str = Form(...), file: UploadFile = File(...)
     ) -> JSONResponse:
         byte = await file.read()
-        self.__executor.submit(self.__generate, user_id, byte)
+        await self.__queue.put((user_id, byte))
         return JSONResponse(
             {"message": "Model generation is submitted."},
             status_code=200,
