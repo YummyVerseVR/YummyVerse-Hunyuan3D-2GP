@@ -9,8 +9,8 @@ parser.add_argument(
     "-p",
     "--port",
     type=int,
-    default=8003,
-    help="Port to run the FastAPI application on(default: 8003)",
+    default=8000,
+    help="Port to run the FastAPI application on(default: 8000)",
 )
 parser.add_argument(
     "-c",
