@@ -135,7 +135,7 @@ class App:
 
     def __process(self, user_id: str, byte: bytes) -> None:
         image = Image.open(BytesIO(byte)).convert("RGB")
-        path, _ = self.__hunyuan3D_controller.generate(image=image)
+        path, _ = self.__hunyuan3D_controller.generate(image=image, reshape=True)
 
         self.__save_process(user_id=user_id, path=path)
 

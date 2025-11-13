@@ -3,7 +3,9 @@ import random
 import time
 import uuid
 import torch
+import numpy
 
+from sklearn.decomposition import PCA
 from PIL import Image
 from mmgp import offload, profile_type
 from trimesh import Trimesh
@@ -150,6 +152,40 @@ class Hunyuan3DController:
         os.makedirs(save_folder, exist_ok=True)
         return save_folder
 
+    def __reshape(self, mesh: Trimesh) -> Trimesh:
+        points = mesh.vertices
+
+        pca = PCA(n_components=3)
+        pca.fit(points)
+
+        principal_axis = pca.components_[0]
+        principal_axis = principal_axis / numpy.linalg.norm(principal_axis)
+
+        proj = points @ principal_axis
+        bottom_point = points[numpy.argmin(proj)]
+        top_point = points[numpy.argmax(proj)]
+
+        target_axis = numpy.array([0, 1, 0])  # Y axis
+        v = numpy.cross(principal_axis, target_axis)
+        c = numpy.dot(principal_axis, target_axis)
+
+        if numpy.linalg.norm(v) < 1e-8:
+            R = numpy.eye(3)
+        else:
+            vx = numpy.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+            R = numpy.eye(3) + vx + vx @ vx * ((1 - c) / (numpy.linalg.norm(v) ** 2))
+
+        scale = 1.0 / numpy.linalg.norm(top_point - bottom_point)
+        translation = -bottom_point
+
+        # Apply transformation
+        mesh.apply_translation(translation)
+        mesh.apply_transform(
+            numpy.block([[R, numpy.zeros((3, 1))], [numpy.zeros((1, 3)), 1]])
+        )
+        mesh.apply_scale(scale)
+        return mesh
+
     def __export(
         self,
         mesh: Trimesh,
@@ -186,6 +222,7 @@ class Hunyuan3DController:
         octree_resolution: int = 256,
         check_box_rembg: bool = False,
         num_chunks: int = 200000,
+        reshape: bool = False,
     ) -> tuple[str, dict[str, Image.Image | None] | Image.Image | None]:
         if not self.__mv_mode and image is None and caption is None:
             self.__logger.log(
@@ -269,6 +306,7 @@ class Hunyuan3DController:
             "Model convert and face reducing completed",
             LogLevel.INFO,
         )
+        mesh = self.__reshape(mesh) if reshape else mesh
 
         main_image = (
             converted_image
