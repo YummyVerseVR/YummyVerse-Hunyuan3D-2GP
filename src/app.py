@@ -32,9 +32,6 @@ class App:
         self.__hunyuan3D_controller = Hunyuan3DController(config, self.__logger)
         self.__router = APIRouter()
         self.__app = FastAPI()
-
-        asyncio.create_task(self.__worker())
-
         self.__executor = ThreadPoolExecutor()
 
         self.__setup_routes()
@@ -44,6 +41,7 @@ class App:
         )
 
     def __setup_routes(self):
+        self.__router.add_event_handler("startup", self.__activate)
         self.__router.add_api_route(
             "/generate",
             self.generate,
@@ -53,12 +51,15 @@ class App:
         self.__router.add_api_route(
             "/process",
             self.process,
-            methods=["GET"],
+            methods=["POST"],
             response_class=JSONResponse,
         )
         self.__router.add_api_route(
             "/ping", self.ping, methods=["GET"], response_class=JSONResponse
         )
+
+    def __activate(self):
+        asyncio.create_task(self.__worker())
 
     async def __worker(self):
         while True:
