@@ -43,6 +43,7 @@ dependencies = [
     "xformers>=0.0.29.post3",
     "setuptools>=80.9.0",
     "pylognet",
+    "scikit-learn>=1.7.2",
 ]
 
 # Let uv resolve local path sources for in-repo native extensions
