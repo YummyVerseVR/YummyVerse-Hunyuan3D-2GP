@@ -221,7 +221,7 @@ class Hunyuan3DController:
         guidance_scale: float = 7.5,
         octree_resolution: int = 256,
         check_box_rembg: bool = False,
-        num_chunks: int = 200000,
+        num_chunks: int = 300000,
         reshape: bool = False,
     ) -> tuple[str, dict[str, Image.Image | None] | Image.Image | None]:
         if not self.__mv_mode and image is None and caption is None:

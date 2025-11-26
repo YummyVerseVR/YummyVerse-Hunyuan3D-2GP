@@ -50,8 +50,14 @@ class App:
         )
         self.__router.add_api_route(
             "/process",
-            self.process,
+            self.generate,
             methods=["POST"],
+            response_class=JSONResponse,
+        )
+        self.__router.add_api_route(
+            "/queue",
+            self.queue,
+            methods=["GET"],
             response_class=JSONResponse,
         )
         self.__router.add_api_route(
@@ -130,15 +136,15 @@ class App:
 
     def __generate(self, user_id: str, byte: bytes) -> None:
         image = Image.open(BytesIO(byte)).convert("RGB")
-        path, _ = self.__hunyuan3D_controller.generate(image=image)
+        path, _ = self.__hunyuan3D_controller.generate(image=image, reshape=True)
 
-        self.__save_model(user_id=user_id, path=path)
+        self.__save_process(user_id=user_id, path=path)
 
     def __process(self, user_id: str, byte: bytes) -> None:
         image = Image.open(BytesIO(byte)).convert("RGB")
         path, _ = self.__hunyuan3D_controller.generate(image=image, reshape=True)
 
-        self.__save_process(user_id=user_id, path=path)
+        self.__save_model(user_id=user_id, path=path)
 
     def get_app(self):
         self.__app.include_router(self.__router)
@@ -163,6 +169,13 @@ class App:
         self.__executor.submit(self.__process, user_id, byte)
         return JSONResponse(
             {"message": "Model generation is submitted."},
+            status_code=200,
+        )
+
+    # /queue
+    async def queue(self) -> JSONResponse:
+        return JSONResponse(
+            {"queue": self.__queue.qsize()},
             status_code=200,
         )
 
