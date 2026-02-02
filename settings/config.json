@@ -25,5 +25,10 @@
     "endpoints": {
         "control": "http://10.0.1.11:8000",
         "logger": "http://10.0.1.11:9000"
+    },
+    "system": {
+        "enable_logging": false,
+        "debug_mode": false,
+        "port": 8003
     }
 }

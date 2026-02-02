@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    container_name: YummyModelServer
+    # 設定ファイルの注入
+    volumes:
+      - ./settings/config.json:/app/settings/config.json:ro # :ro Read Only
+    environment:
+      - PYTHONUNBUFFERED=1
