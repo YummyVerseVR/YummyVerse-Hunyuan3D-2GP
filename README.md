@@ -62,3 +62,22 @@ uv run src/entry.py
 
 ## APIエンドポイント
 このサーバは以下のAPIエンドポイントを提供します. 詳細な仕様についてはFastAPIの自動生成ドキュメント`http://0.0.0.0:<port>/docs`を参照してください.
+
+## One-shot Worker Adapter
+
+`src/worker_cli.py` は、大学側Workerから入力画像1枚をHunyuan3Dへ渡し、GLBを1件生成するためのCLI境界です。画像をモデル初期化前に検証し、生成処理は既存の`Hunyuan3DController`へ委譲します。adapterはGLB検証、atomicな成果物公開、SHA-256付きmanifest生成を担当し、caption/T23D経路は公開しません。
+
+```bash
+uv run python src/worker_cli.py \
+  --source-image /job/source.png \
+  --output-glb /job/model.glb \
+  --config-json settings/config.json \
+  --manifest /job/manifest.json
+```
+
+Hermetic testはCUDA、native extension、model weightを必要とせず、次の軽量環境だけで実行できます。
+
+```bash
+uv run --no-project --with pytest --with pillow \
+  pytest -q tests/test_worker_cli.py
+```

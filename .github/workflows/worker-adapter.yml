@@ -1,0 +1,33 @@
+name: Worker Adapter
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hermetic-worker-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Run hermetic adapter tests
+        run: >-
+          uv run --no-project --with pytest --with pillow
+          pytest -q tests/test_worker_cli.py
+      - name: Compile adapter boundary
+        run: >-
+          uv run --no-project --with pytest --with pillow
+          python -m compileall src/worker_cli.py tests/test_worker_cli.py
