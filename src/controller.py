@@ -146,7 +146,7 @@ class Hunyuan3DController:
     def __gen_save_folder(self) -> str:
         # a folder to save the generated files
         folder_name = str(uuid.uuid4())
-        save_folder = os.path.join("gradio_cache", folder_name)
+        save_folder = os.path.join(self.__save_dir, folder_name)
         os.makedirs(save_folder, exist_ok=True)
         return save_folder
 
