@@ -57,6 +57,44 @@ def test_image_worker_publishes_glb_and_manifest(tmp_path, monkeypatch):
     assert calls["image"].size == (1, 1)
 
 
+def test_root_container_hands_outputs_to_spool_owner(tmp_path, monkeypatch):
+    worker = load_worker()
+    image_path = tmp_path / "input.png"
+    Image.new("RGB", (1, 1), "white").save(image_path)
+    returned = tmp_path / "generated.glb"
+    returned.write_bytes(tiny_glb())
+
+    class FakeController:
+        def __init__(self, _config, _logger):
+            pass
+
+        def generate(self, **_kwargs):
+            return str(returned), None
+
+    monkeypatch.setitem(sys.modules, "controller", types.SimpleNamespace(Hunyuan3DController=FakeController))
+    monkeypatch.setattr(worker.os, "geteuid", lambda: 0)
+    handoffs = []
+    monkeypatch.setattr(
+        worker.os,
+        "chown",
+        lambda path, uid, gid, **kwargs: handoffs.append(
+            (path, uid, gid, kwargs)
+        ),
+    )
+    config = tmp_path / "config.json"
+    config.write_text('{"hunyuan3d": {"device": "cpu"}}')
+    output = tmp_path / "out" / "model.glb"
+    manifest = tmp_path / "out" / "manifest.json"
+
+    assert worker.main([str(image_path), str(output), str(config), str(manifest)]) == 0
+    owner = output.parent.stat()
+    assert len(handoffs) == 2
+    assert {(uid, gid) for _, uid, gid, _ in handoffs} == {
+        (owner.st_uid, owner.st_gid)
+    }
+    assert all(options == {"follow_symlinks": False} for *_, options in handoffs)
+
+
 def test_invalid_image_is_rejected_before_controller_import(tmp_path, monkeypatch):
     worker = load_worker()
     image_path = tmp_path / "bad.png"

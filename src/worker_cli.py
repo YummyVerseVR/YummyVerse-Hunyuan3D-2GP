@@ -89,6 +89,7 @@ def _atomic_publish(source: Path, destination: Path) -> bytes:
                 target.write(chunk)
             target.flush()
             os.fsync(target.fileno())
+        _handoff_to_spool_owner(Path(temporary), destination.parent)
         os.replace(temporary, destination)
         return digest.digest()
     except Exception:
@@ -97,6 +98,15 @@ def _atomic_publish(source: Path, destination: Path) -> bytes:
         except FileNotFoundError:
             pass
         raise
+
+
+def _handoff_to_spool_owner(path: Path, spool: Path) -> None:
+    """Make root-created bind-mount outputs readable by the host worker."""
+
+    if os.geteuid() != 0:
+        return
+    owner = spool.stat(follow_symlinks=False)
+    os.chown(path, owner.st_uid, owner.st_gid, follow_symlinks=False)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -145,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     temporary = manifest_path.with_name(f".{manifest_path.name}.tmp")
     temporary.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    _handoff_to_spool_owner(temporary, manifest_path.parent)
     os.replace(temporary, manifest_path)
     return 0
 
